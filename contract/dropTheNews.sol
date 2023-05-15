@@ -5,7 +5,6 @@ import "../node_modules/@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "../node_modules/@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 import "../node_modules/@openzeppelin/contracts/utils/Counters.sol";
 
-
 interface IERC20Token {
   function transfer(address, uint256) external returns (bool);
   function approve(address, uint256) external returns (bool);
@@ -49,8 +48,18 @@ contract DropTheNews is ERC721URIStorage {
         string token_uri;
     }
 
+    event NewsPosted(address indexed poster, string title, string description);
+    event NewsDeleted(address indexed deleter, uint indexed index);
+    event NewsLiked(uint indexed index, address indexed liker);
+    event NewsDisliked(uint indexed index, address indexed disliker);
+    event CreatorTipped(uint indexed index, address indexed tipper, uint amount);
+    event NFTClaimed(address indexed claimer, uint256 tokenId, string tokenURI);
+
+
+
 	//mapping for posted news
     mapping(uint => News) internal postedNews;
+
 
     mapping(uint => mapping(address => bool)) public likers;
 
@@ -65,10 +74,18 @@ contract DropTheNews is ERC721URIStorage {
         require(bytes(_title).length > 0, "Title cannot be empty");
         require(bytes(_description).length > 0, "Description cannot be empty");
 
+        for (uint i = 0; i < newsLength; i++) {
+        if (keccak256(abi.encodePacked(postedNews[i].title)) == keccak256(abi.encodePacked(_title))) {
+            revert("News with same title already exists.");
+        }
+    }
+
         uint _likes = 0;
         uint _tips = 0;
         postedNews[newsLength] = News(payable(msg.sender), _title, _description, _likes, _tips);
         newsLength++;
+
+        emit NewsPosted(msg.sender, _title, _description);
     }
 
 	// Fetch a news
@@ -88,11 +105,7 @@ contract DropTheNews is ERC721URIStorage {
         require(msg.sender == postedNews[_index].owner, "Only news creator can delete news");
 
         delete postedNews[_index];
-    }
-
-    // Get the length of postedNews
-    function getNewsLength() public view returns(uint) {
-        return newsLength;
+        emit NewsDeleted(msg.sender, _index);
     }
 
     // Like and dislike news
@@ -102,14 +115,19 @@ contract DropTheNews is ERC721URIStorage {
         if(likers[_index][msg.sender] == false) {
             likers[_index][msg.sender] = true;
             postedNews[_index].likes++;
+            emit NewsLiked(_index, msg.sender);
             
         } else if(likers[_index][msg.sender] == true) {
             likers[_index][msg.sender] = false;
             postedNews[_index].likes--;
+            emit NewsDisliked(_index, msg.sender);
         }
     }
 
     function tipCreator(uint _index, uint _amount) public payable {
+
+        require(_index < newsLength, "Invalid news article index");
+        
         News memory newsCreator = postedNews[_index];
         address _receiver = newsCreator.owner;
         require(IERC20Token(cUsdTokenAddress).balanceOf(msg.sender) >= _amount, "Insufficient balance in cUSD token");
@@ -123,6 +141,9 @@ contract DropTheNews is ERC721URIStorage {
         }
         // // Increment tips
         postedNews[_index].tips = postedNews[_index].tips + _amount;
+
+        emit CreatorTipped(_index, msg.sender, _amount);
+
 
     }
 
@@ -142,6 +163,8 @@ contract DropTheNews is ERC721URIStorage {
 
         // SET CLAIMED NFT
         claimedNFTs[msg.sender] = NFTParams(newItemId, tokenURI);
+
+        emit NFTClaimed(msg.sender, newItemId, tokenURI);
     }
 
     function getClaimedNFT() public view returns(uint, string memory) {
@@ -150,6 +173,4 @@ contract DropTheNews is ERC721URIStorage {
             claimedNFTs[msg.sender].token_uri
         );
     }
-
-    
 }
