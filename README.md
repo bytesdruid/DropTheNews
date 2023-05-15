@@ -8,7 +8,7 @@ This is a news blog site where users can do the following:
 * Claim A Proof of Tips NFT for tipping at least one news creator.
 
 ## Live Demo
-<!-- [DropTheNews Site](https://algobloom.github.io/DropTheNews/) -->
+https://algobloom.github.io/DropTheNews/
 
 ## Screenshots
 <img src="/public/Screenshot from 2023-05-14 21-14-48.png"/>
