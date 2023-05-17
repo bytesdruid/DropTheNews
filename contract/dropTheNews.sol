@@ -101,28 +101,45 @@ contract DropTheNews is ERC721URIStorage {
         );
     }
 
-    function deleteNews(uint _index) public {
-        require(msg.sender == postedNews[_index].owner, "Only news creator can delete news");
+  
 
-        delete postedNews[_index];
-        emit NewsDeleted(msg.sender, _index);
+    function deleteNews(uint _index) public {
+    require(msg.sender == postedNews[_index].owner, "Only news creator can delete news");
+
+    // Shift the remaining news to fill the deleted position
+    for (uint i = _index; i < newsLength - 1; i++) {
+        postedNews[i] = postedNews[i + 1];
     }
+
+    // Delete the last element and update newsLength
+    delete postedNews[newsLength - 1];
+    newsLength--;
+
+    emit NewsDeleted(msg.sender, _index);
+}
+
+
+
 
     // Like and dislike news
+
+
     function likeAndDislikeNews(uint _index) public {
+    require(_index < newsLength, "Invalid news article index");
 
-
-        if(likers[_index][msg.sender] == false) {
-            likers[_index][msg.sender] = true;
-            postedNews[_index].likes++;
-            emit NewsLiked(_index, msg.sender);
-            
-        } else if(likers[_index][msg.sender] == true) {
-            likers[_index][msg.sender] = false;
-            postedNews[_index].likes--;
-            emit NewsDisliked(_index, msg.sender);
-        }
+    if (likers[_index][msg.sender] == false) {
+        // User has not liked the article, so increment the likes
+        likers[_index][msg.sender] = true;
+        postedNews[_index].likes++;
+        emit NewsLiked(_index, msg.sender);
+    } else {
+        // User has already liked the article, so decrement the likes
+        likers[_index][msg.sender] = false;
+        postedNews[_index].likes--;
+        emit NewsDisliked(_index, msg.sender);
     }
+}
+
 
     function tipCreator(uint _index, uint _amount) public payable {
 
@@ -151,6 +168,11 @@ contract DropTheNews is ERC721URIStorage {
         // In the frontend, upload NFT image and metadata on ipfs, pass the medata hash url as the uri parameter
 
         require(claimers[msg.sender].isEligible == true, "You are not eligible to claim NFT");
+         // Validate that the caller has tipped a sufficient amount
+            uint _index = claimers[msg.sender].tipIndex;
+            uint _amount = postedNews[_index].tips;
+            require(_amount > 0, "You have not tipped the creator");
+            
         require(claimers[msg.sender].isClaimed == false, "You have already claimed your NFT");
         tokenId.increment();
         uint256 newItemId = tokenId.current();
