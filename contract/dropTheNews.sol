@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT  
+// SPDX-License-Identifier: MIT
 pragma solidity >=0.7.0 <0.9.0;
 
 import "../node_modules/@openzeppelin/contracts/token/ERC721/ERC721.sol";
@@ -7,45 +7,30 @@ import "../node_modules/@openzeppelin/contracts/utils/Counters.sol";
 
 interface IERC20Token {
   function transfer(address, uint256) external returns (bool);
-  function approve(address, uint256) external returns (bool);
-  function transferFrom(address, address, uint256) external returns (bool);
-  function totalSupply() external view returns (uint256);
   function balanceOf(address) external view returns (uint256);
-  function allowance(address, address) external view returns (uint256);
-
-  event Transfer(address indexed from, address indexed to, uint256 value);
-  event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-// https://gateway.pinata.cloud/ipfs/QmTm9gokrJsHY8PWRUbHmCBdULUoaQZsgiqRWoLjEiwR1K (tokenuri)
-
 contract DropTheNews is ERC721URIStorage {
-
     using Counters for Counters.Counter;
     Counters.Counter private tokenId;
 
-    constructor() ERC721("Proof of Tips", "POT") {} 
-    uint public newsLength = 0; 
-    // uint public nftID = 1; 
-    
-    address internal cUsdTokenAddress = 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1;  //cUSd token contract address
+    constructor() ERC721("Proof of Tips", "POT") {}
 
-	struct News {
-		address payable owner;
-		string title;
-		string description;
-		uint likes;
+    uint public newsLength = 0;
+    address internal cUsdTokenAddress = 0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1; // cUSd token contract address
+
+    struct News {
+        address payable owner;
+        string title;
+        string description;
+        uint likes;
         uint tips;
-	}
+    }
 
     struct Claimer {
         bool isEligible;
         bool isClaimed;
-    }
-
-    struct NFTParams {
-        uint nftId;
-        string token_uri;
+        uint tipIndex;
     }
 
     event NewsPosted(address indexed poster, string title, string description);
@@ -55,30 +40,23 @@ contract DropTheNews is ERC721URIStorage {
     event CreatorTipped(uint indexed index, address indexed tipper, uint amount);
     event NFTClaimed(address indexed claimer, uint256 tokenId, string tokenURI);
 
-
-
-	//mapping for posted news
     mapping(uint => News) internal postedNews;
-
-
     mapping(uint => mapping(address => bool)) public likers;
+    mapping(address => Claimer) internal claimers;
+    mapping(address => NFTParams) internal claimedNFTs;
 
-	//mapping for addresses eligible to claim NFT 
-    mapping(address => Claimer) internal claimers; // Addresses eligible to claim NFT (addresses that tipped), can only claim once
+    struct NFTParams {
+        uint nftId;
+        string token_uri;
+    }
 
-    // claimed NFTS
-    mapping (address => NFTParams) internal claimedNFTs;
-
-    // post news
     function postNews(string calldata _title, string calldata _description) public {
         require(bytes(_title).length > 0, "Title cannot be empty");
         require(bytes(_description).length > 0, "Description cannot be empty");
 
         for (uint i = 0; i < newsLength; i++) {
-        if (keccak256(abi.encodePacked(postedNews[i].title)) == keccak256(abi.encodePacked(_title))) {
-            revert("News with same title already exists.");
+            require(keccak256(bytes(postedNews[i].title)) != keccak256(bytes(_title)), "News with the same title already exists");
         }
-    }
 
         uint _likes = 0;
         uint _tips = 0;
@@ -88,111 +66,104 @@ contract DropTheNews is ERC721URIStorage {
         emit NewsPosted(msg.sender, _title, _description);
     }
 
-	// Fetch a news
-    function getNews(uint _index) public view returns(address payable, string memory, string memory, uint, uint) {
-        return 
-        (
+    function getNews(uint _index) public view returns (address payable, string memory, string memory, uint, uint) {
+        require(_index < newsLength, "Invalid news article index");
+
+        return (
             postedNews[_index].owner,
             postedNews[_index].title,
             postedNews[_index].description,
             postedNews[_index].likes,
             postedNews[_index].tips
-
         );
     }
-
-  
 
     function deleteNews(uint _index) public {
-    require(msg.sender == postedNews[_index].owner, "Only news creator can delete news");
+        require(_index < newsLength, "Invalid news article index");
+        require(msg.sender == postedNews[_index].owner, "Only the news creator can delete the news");
 
-    // Shift the remaining news to fill the deleted position
-    for (uint i = _index; i < newsLength - 1; i++) {
-        postedNews[i] = postedNews[i + 1];
+        for (uint i = _index; i < newsLength - 1; i++) {
+            postedNews[i] = postedNews[i + 1];
+        }
+
+        delete postedNews[newsLength - 1];
+        newsLength--;
+
+        emit NewsDeleted(msg.sender, _index);
     }
-
-    // Delete the last element and update newsLength
-    delete postedNews[newsLength - 1];
-    newsLength--;
-
-    emit NewsDeleted(msg.sender, _index);
-}
-
-
-
-
-    // Like and dislike news
-
 
     function likeAndDislikeNews(uint _index) public {
-    require(_index < newsLength, "Invalid news article index");
+        require(_index < newsLength, "Invalid news article index");
 
-    if (likers[_index][msg.sender] == false) {
-        // User has not liked the article, so increment the likes
-        likers[_index][msg.sender] = true;
-        postedNews[_index].likes++;
-        emit NewsLiked(_index, msg.sender);
-    } else {
-        // User has already liked the article, so decrement the likes
-        likers[_index][msg.sender] = false;
-        postedNews[_index].likes--;
-        emit NewsDisliked(_index, msg.sender);
+        bool currentLikeStatus = likers[_index][msg.sender];
+
+        if (!currentLikeStatus) {
+            postedNews[_index].likes++;
+        } else {
+            postedNews[_index].likes--;
+        }
+
+        likers[_index][msg.sender] = !currentLikeStatus;
+
+        if (!currentLikeStatus) {
+            emit NewsLiked(_index, msg.sender);
+        } else {
+            emit NewsDisliked(_index, msg.sender);
+        }
     }
-}
-
 
     function tipCreator(uint _index, uint _amount) public payable {
-
         require(_index < newsLength, "Invalid news article index");
-        
-        News memory newsCreator = postedNews[_index];
+
+        News storage newsCreator = postedNews[_index];
         address _receiver = newsCreator.owner;
+
         require(IERC20Token(cUsdTokenAddress).balanceOf(msg.sender) >= _amount, "Insufficient balance in cUSD token");
+
         require(
-            IERC20Token(cUsdTokenAddress).transferFrom(msg.sender, _receiver, _amount), "Transfer failed."
+            IERC20Token(cUsdTokenAddress).transfer(_receiver, _amount),
+            "Transfer of tips failed"
         );
 
-        // Make msg.sender eligible to claim NFT
-        if(claimers[msg.sender].isEligible == false) {
+        if (!claimers[msg.sender].isEligible) {
             claimers[msg.sender].isEligible = true;
+            claimers[msg.sender].tipIndex = _index;
         }
-        // // Increment tips
-        postedNews[_index].tips = postedNews[_index].tips + _amount;
+
+        newsCreator.tips += _amount;
 
         emit CreatorTipped(_index, msg.sender, _amount);
-
-
     }
 
     function claimNFT(string calldata tokenURI) public {
-        // In the frontend, upload NFT image and metadata on ipfs, pass the medata hash url as the uri parameter
+        require(claimers[msg.sender].isEligible, "You are not eligible to claim the NFT");
+        require(!claimers[msg.sender].isClaimed, "You have already claimed your NFT");
+        require(claimers[msg.sender].tipIndex < newsLength, "Invalid news article index");
 
-        require(claimers[msg.sender].isEligible == true, "You are not eligible to claim NFT");
-         // Validate that the caller has tipped a sufficient amount
-            uint _index = claimers[msg.sender].tipIndex;
-            uint _amount = postedNews[_index].tips;
-            require(_amount > 0, "You have not tipped the creator");
-            
-        require(claimers[msg.sender].isClaimed == false, "You have already claimed your NFT");
+        uint _index = claimers[msg.sender].tipIndex;
+        uint _amount = postedNews[_index].tips;
+
+        require(_amount > 0, "You have not tipped the creator");
+
         tokenId.increment();
         uint256 newItemId = tokenId.current();
 
         _mint(msg.sender, newItemId);
         _setTokenURI(newItemId, tokenURI);
 
-        // Can't claim twice
         claimers[msg.sender].isClaimed = true;
 
-        // SET CLAIMED NFT
         claimedNFTs[msg.sender] = NFTParams(newItemId, tokenURI);
 
         emit NFTClaimed(msg.sender, newItemId, tokenURI);
     }
 
-    function getClaimedNFT() public view returns(uint, string memory) {
+    function getClaimedNFT() public view returns (uint, string memory) {
+        NFTParams storage claimedNFT = claimedNFTs[msg.sender];
+
         return (
-            claimedNFTs[msg.sender].nftId,
-            claimedNFTs[msg.sender].token_uri
+            claimedNFT.nftId,
+            claimedNFT.token_uri
         );
     }
 }
