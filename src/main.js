@@ -5,11 +5,12 @@ import dropTheNewsAbi from '../contract/dropTheNews.abi.json';
 import erc20Abi from "../contract/erc20.abi.json"
 
 const ERC20_DECIMALS = 18;
-const ContractAddress = "0x6F5cD0Aed902F1A56D24FE5deB9e1635beA8C783";
+const ContractAddress = "0x728A3c76eA83C3b3e252911A588584474b34b800";
 const cUSDContractAddress = "0x874069Fa1Eb16D44d622F2e0Ca25eeA172369bC1";
 
 let kit;
 let contract;
+let tipId
 
 let postednews = [];
 let nftData = {};
@@ -76,6 +77,8 @@ document.querySelector("#newsBtn").addEventListener("click", async (e) => {
         notification(`⚠️ ${error}.`)
     }
     notification(`You have successfully added "${title}".`)
+    document.getElementById("newsTitle").value = "";
+    document.getElementById("newsDescription").value = "";
     // Get the news
     getNews();
 
@@ -83,7 +86,8 @@ document.querySelector("#newsBtn").addEventListener("click", async (e) => {
 
 // Get news
 const getNews = async function () {
-    const newsLength = await contract.methods.getNewsLength().call()
+    const newsLength = await contract.methods.newsLength().call()
+    
     const _postednews = []
 
     for (let i = 0; i < newsLength; i++) {
@@ -148,6 +152,7 @@ function newsTemplate(news) {
                     <img src="https://static-00.iconduck.com/assets.00/white-heart-emoji-512x502-vkzcruk0.png" width="15px"/>
                 </a>
                 <a class="btn btn-lg btn-outline-dark tipBtn fs-6 p-3" id=${news.index}>Tip</a>
+                <a class="btn btn-lg btn-outline-dark deleteBtn fs-6 p-3" id=${news.index}>Delete News</a>
             </div>
         </div>
         </div>
@@ -212,49 +217,70 @@ document.querySelector("#news-section").addEventListener("click", async (e) => {
 
         
     }
+});
+
+document.querySelector("#news-section").addEventListener("click", async (e) => {
+
+    if(e.target.className.includes("deleteBtn")) {
+        
+        let id = e.target.id;
+
+        notification(`⌛ Awaiting deleting news ..."`)
+        try {
+            await contract.methods
+            .deleteNews(id)
+            .send({ from: kit.defaultAccount })
+        } catch (error) {
+            notification(`⚠️ ${error}.`)
+        }
+        // Get the news  
+        getNews();  
+    }
+});
+
+document.querySelector("#news-section").addEventListener("click", async (e) => {
 
     if(e.target.className.includes("tipBtn")) {
         
-        let id = e.target.id
+        tipId = e.target.id
         // toggle modal
         jQuery('#tipModal').modal('toggle')
-        // get the value from the modal
-        document.querySelector('#tipBtn').addEventListener("click", async (e) => {
-            e.preventDefault();
-            let tipAmount = new BigNumber(document.getElementById("tipAmount").value)
-            .shiftedBy(ERC20_DECIMALS)
-            .toString()
-
-
-
-            // call contract method
-
-            notification("Waiting for payment approval...")
-            try {
-                await approve(tipAmount)
-            } catch (error) {
-                notification(`${error}.`)
-            }
-            notification(`Awaiting Tipping ...`)
-            try {
-                await contract.methods
-                .tipCreator(id, tipAmount)
-                .send({ from: kit.defaultAccount })
-            } catch (error) {
-                notification(`⚠️ ${error}.`)
-            }
-
-            notification(`You have successfully tipped news creator.`)
-            // Get the balance and news
-            getBalance();    
-            getNews();
-
-
-        })
-        
     }
-})
 
+});
+document.querySelector('#tipBtn').addEventListener("click", async (e) => {
+    
+    // get the value from the modal
+    e.preventDefault();
+    let tipAmount = new BigNumber(document.getElementById("tipAmount").value)
+    .shiftedBy(ERC20_DECIMALS)
+    .toString()
+    // call contract method
+
+    notification("Waiting for payment approval...")
+    try {
+        await approve(tipAmount)
+    } catch (error) {
+        notification(`${error}.`)
+    }
+    notification(`Awaiting Tipping ...`)
+    try {
+        await contract.methods
+        .tipCreator(tipId, tipAmount)
+        .send({ from: kit.defaultAccount })
+    } catch (error) {
+        notification(`⚠️ ${error}.`)
+    }
+
+    // reset value to null
+    document.getElementById("tipAmount").value = "";
+
+    // Get the balance and news
+    getBalance();    
+    getNews();
+
+})
+        
 async function renderClaimedNFT() {
     // append nft information in appriopriate place
     if(nftData.id) {
